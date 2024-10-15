@@ -1,0 +1,164 @@
+class Proceso:
+    def __init__(self, etiqueta, burst_time, arrival_time, queue, prioridad):
+        self.etiqueta = etiqueta
+        self.burst_time = burst_time
+        self.arrival_time = arrival_time
+        self.queue = queue
+        self.prioridad = prioridad
+        self.tiempo_restante = burst_time
+        self.tiempo_comienzo = None
+        self.tiempo_finalizacion = None
+        self.tiempo_espera = 0
+        self.tiempo_respuesta = -1  # Se calculará cuando el proceso inicie por primera vez
+
+class Cola:
+    def __init__(self, politica, quantum=None):
+        self.procesos = []
+        self.politica = politica
+        self.quantum = quantum
+
+    def agregar_proceso(self, proceso):
+        self.procesos.append(proceso)
+
+    def tiene_procesos(self):
+        return len(self.procesos) > 0
+
+    def ejecutar(self, tiempo_actual):
+        if self.politica == "FCFS":
+            return self._fcfs(tiempo_actual)
+        elif self.politica == "RR":
+            return self._rr(tiempo_actual)
+        elif self.politica == "SJF":
+            return self._sjf(tiempo_actual)
+        elif self.politica == "STCF":
+            return self._stcf(tiempo_actual)
+
+    def _fcfs(self, tiempo_actual):
+        if self.procesos:
+            proceso = self.procesos.pop(0)
+            proceso.tiempo_comienzo = tiempo_actual if proceso.tiempo_comienzo is None else proceso.tiempo_comienzo
+            proceso.tiempo_espera = tiempo_actual - proceso.arrival_time
+            tiempo_actual += proceso.burst_time
+            proceso.tiempo_finalizacion = tiempo_actual
+            return proceso, tiempo_actual
+
+    def _rr(self, tiempo_actual):
+        if self.procesos:
+            proceso = self.procesos.pop(0)
+            if proceso.tiempo_comienzo is None:
+                proceso.tiempo_comienzo = tiempo_actual
+            if proceso.tiempo_respuesta == -1:
+                proceso.tiempo_respuesta = tiempo_actual - proceso.arrival_time
+
+            if proceso.tiempo_restante > self.quantum:
+                proceso.tiempo_restante -= self.quantum
+                tiempo_actual += self.quantum
+                self.procesos.append(proceso)
+            else:
+                tiempo_actual += proceso.tiempo_restante
+                proceso.tiempo_finalizacion = tiempo_actual
+                proceso.tiempo_restante = 0
+
+            return proceso, tiempo_actual
+
+    def _sjf(self, tiempo_actual):
+        self.procesos.sort(key=lambda x: x.burst_time)
+        return self._fcfs(tiempo_actual)
+
+    def _stcf(self, tiempo_actual):
+        self.procesos.sort(key=lambda x: x.tiempo_restante)
+        return self._fcfs(tiempo_actual)
+
+class MLQScheduler:
+    def __init__(self, colas):
+        self.colas = colas
+        self.tiempo_actual = 0
+        self.resultados = []
+        self.lista_procesos = []
+
+    def agregar_proceso(self, proceso):
+        self.lista_procesos.append(proceso)
+
+    def ejecutar(self):
+        while self.lista_procesos or any(cola.tiene_procesos() for cola in self.colas):
+            self._agregar_procesos_entrantes()
+
+            for cola in self.colas:
+                while cola.tiene_procesos():
+                    proceso, nuevo_tiempo = cola.ejecutar(self.tiempo_actual)
+                    if proceso:
+                        if proceso.tiempo_comienzo is None:
+                            proceso.tiempo_comienzo = self.tiempo_actual
+                        if proceso not in self.resultados:
+                            self.resultados.append(proceso)
+                        self.tiempo_actual = nuevo_tiempo
+
+            if not any(cola.tiene_procesos() for cola in self.colas):
+                self._avanzar_tiempo_al_siguiente_proceso()
+
+    def _agregar_procesos_entrantes(self):
+        for proceso in list(self.lista_procesos):
+            if proceso.arrival_time <= self.tiempo_actual:
+                self.colas[proceso.queue - 1].agregar_proceso(proceso)
+                self.lista_procesos.remove(proceso)
+
+    def _avanzar_tiempo_al_siguiente_proceso(self):
+        if self.lista_procesos:
+            siguiente_proceso = min(self.lista_procesos, key=lambda x: x.arrival_time)
+            self.tiempo_actual = siguiente_proceso.arrival_time
+
+    def generar_reporte(self, archivo_salida):
+        with open(archivo_salida, 'w') as f:
+            f.write("# etiqueta; BT; AT; Q; Pr; WT; CT; RT; TAT\n")
+            total_wt, total_ct, total_rt, total_tat = 0, 0, 0, 0
+            n = len(self.resultados)
+
+            for proceso in self.resultados:
+                turnaround_time = proceso.tiempo_finalizacion - proceso.arrival_time
+                tiempo_respuesta = proceso.tiempo_comienzo - proceso.arrival_time
+                tiempo_espera = proceso.tiempo_comienzo - proceso.arrival_time
+
+                total_wt += tiempo_espera
+                total_ct += proceso.tiempo_finalizacion
+                total_rt += tiempo_respuesta
+                total_tat += turnaround_time
+
+                f.write(f"{proceso.etiqueta};{proceso.burst_time};{proceso.arrival_time};{proceso.queue};{proceso.prioridad};"
+                        f"{tiempo_espera};{proceso.tiempo_finalizacion};{tiempo_respuesta};{turnaround_time}\n")
+
+            f.write(f"\nWT promedio={total_wt / n}; CT promedio={total_ct / n}; RT promedio={total_rt / n}; TAT promedio={total_tat / n}\n")
+
+class ArchivoProcesos:
+    @staticmethod
+    def leer_procesos_desde_archivo(archivo):
+        procesos = []
+        try:
+            with open(archivo, 'r') as f:
+                for linea in f:
+                    print(f"Leyendo línea: {linea.strip()}")  # Agrega esta línea para verificar el contenido
+                    linea = linea.strip()
+                    if linea and not linea.startswith("#"):
+                        datos = linea.split(";")
+                        etiqueta = datos[0].strip()
+                        burst_time = int(datos[1].strip())
+                        arrival_time = int(datos[2].strip())
+                        queue = int(datos[3].strip())
+                        prioridad = int(datos[4].strip())
+                        procesos.append(Proceso(etiqueta, burst_time, arrival_time, queue, prioridad))
+        except Exception as e:
+            print(f"Error al leer el archivo {archivo}: {e}")
+        return procesos
+# Ejecución
+if __name__ == "__main__":
+    cola1 = Cola("RR", quantum=3)
+    cola2 = Cola("SJF")
+    cola3 = Cola("FCFS")
+
+    scheduler = MLQScheduler([cola1, cola2, cola3])
+    procesos = ArchivoProcesos.leer_procesos_desde_archivo('c:/Users/Valu/proyecto_scheduler/scheduler/mlq001.txt')
+
+    for proceso in procesos:
+        scheduler.agregar_proceso(proceso)
+
+    scheduler.ejecutar()
+    scheduler.generar_reporte('mlq_resultados.txt')

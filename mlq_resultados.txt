@@ -1,0 +1,8 @@
+# etiqueta; BT; AT; Q; Pr; WT; CT; RT; TAT
+A;6;0;1;5;0;9;0;9
+B;9;0;1;4;3;15;3;15
+C;10;0;2;3;15;25;15;25
+D;15;0;2;3;25;40;25;40
+E;8;0;3;2;40;48;40;48
+
+WT promedio=16.6; CT promedio=27.4; RT promedio=16.6; TAT promedio=27.4
